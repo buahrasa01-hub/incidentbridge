@@ -1,0 +1,177 @@
+# IncidentBridge — Forge app manifest.
+#
+# NOTE: there is deliberately NO `app.id` yet. Running `forge register`
+# after Bayu's `forge login` stamps the real app id here; a
+# hand-invented id would be rejected at deploy time. Until then,
+# `forge lint` reports exactly one error: "app must have required
+# property 'id'" — that is expected and is the registration step.
+modules:
+  # FORGE_ACTION_OPEN_ISSUE — panel in the issue view:
+  #   Renders the consistency verdict + one-click fixes for the issue
+  #   being viewed. Backend: resolver (analyzeIssue / applyFix).
+  jira:issuePanel:
+    - key: incidentbridge-issue-panel
+      resource: main
+      resolver:
+        function: resolver
+      render: native
+      title: IncidentBridge — summary vs status check
+      icon: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
+  # FORGE_ACTION_CHECK_PROJECT — project page:
+  #   Lists every drifted issue in the project (scanProject resolver).
+  jira:projectPage:
+    - key: incidentbridge-project-page
+      resource: projectPage
+      resolver:
+        function: resolver
+      render: native
+      title: IncidentBridge — project drift scan
+      icon: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
+  # FORGE_ACTION_ANALYZE — the same brain, exposed to Rovo.
+  #   The agent answers "does this summary match its status?" for one
+  #   issue or a whole project, and can apply the engine's offered fix.
+  rovo:agent:
+    - key: incidentbridge-agent
+      name: IncidentBridge
+      description: >-
+        Detects drift between Jira issue summaries and workflow statuses,
+        explains the mismatch, scans projects for drift, and applies
+        one-click fixes (transition, summary reword, linked JSM request).
+      prompt: >
+        You are IncidentBridge, a meticulous Jira consistency checker.
+        A Jira issue has two voices: its summary, which humans read, and
+        its workflow status, which the process believes. When they
+        disagree, boards, standups and reports quietly lie. Your job is
+        to find that drift and, when asked, repair it.
+
+        You can perform the following jobs:
+
+        ---
+        Job 1: Check one issue
+        1. Obtain the issue key from the user's message or from your
+           context (when the user is viewing an issue, prefer that one).
+        2. Invoke the check-issue-consistency action with that key.
+        3. Report the verdict plainly: quote the summary, name the
+           status, and if there is drift, explain each finding in one
+           sentence and name the fix the checker offers.
+
+        ---
+        Job 2: Scan a project
+        1. Obtain the project key from the user.
+        2. Invoke the scan-project-drift action.
+        3. Summarise how many issues were scanned and how many drifted;
+           list the drifted issues with the reason for each.
+
+        ---
+        Job 3: Fix drift on one issue
+        1. First run Job 1 on the issue so the offered fix is current.
+        2. Tell the user exactly which fix you are about to apply and
+           wait for their confirmation whenever the conversation allows
+           it; never apply a fix the user did not ask for.
+        3. Invoke fix-issue-consistency with the issue key and the fix
+           kind the checker offered ('transition', 'reword-summary', or
+           'link-jsm'). For 'reword-summary', pass the corrected summary
+           text as newSummary.
+        4. Report the action's result verbatim in substance: what
+           changed, or why the fix could not be applied.
+
+        Rules: never invent an issue's summary, status or verdict — only
+        report what the actions return. If an action returns an error,
+        relay it and stop; do not guess a workaround that writes data.
+      conversationStarters:
+        - Check whether this issue's summary matches its status
+        - Scan a project for summary/status drift
+        - Fix the drift on an issue
+      actions:
+        - check-issue-consistency
+        - fix-issue-consistency
+        - scan-project-drift
+  # The agent's tools. These are standard Forge `action` modules, so
+  # other agents (including customer-built ones) can invoke them too.
+  action:
+    - key: check-issue-consistency
+      name: Check issue consistency
+      function: checkConsistencyAction
+      actionVerb: GET
+      description: >-
+        Checks whether a Jira issue's summary agrees with its workflow
+        status category. Returns the verdict and, when they disagree,
+        the drift findings and the fix on offer. Read-only.
+      inputs:
+        issueKey:
+          title: Jira Issue Key
+          type: string
+          required: true
+          description: The key of the Jira issue to check, e.g. "PROJ-123".
+    - key: fix-issue-consistency
+      name: Fix issue consistency
+      function: fixConsistencyAction
+      actionVerb: UPDATE
+      description: >-
+        Applies one fix that the consistency check currently offers for
+        an issue: transition it to the status category its summary
+        claims, rewrite its summary so the wording matches the status,
+        or create a linked Jira Service Management follow-up request.
+        Fails safely when the requested fix is not currently offered.
+      inputs:
+        issueKey:
+          title: Jira Issue Key
+          type: string
+          required: true
+          description: The key of the Jira issue to fix, e.g. "PROJ-123".
+        fixKind:
+          title: Fix kind
+          type: string
+          required: true
+          description: >-
+            One of "transition", "reword-summary", or "link-jsm" — the
+            kind of fix the consistency check offered for this issue.
+        newSummary:
+          title: New summary
+          type: string
+          required: false
+          description: >-
+            For fixKind "reword-summary": the corrected summary text.
+            Omit to reuse the checker's own suggestion.
+    - key: scan-project-drift
+      name: Scan project for drift
+      function: scanProjectAction
+      actionVerb: GET
+      description: >-
+        Scans a Jira project's issues and returns every issue whose
+        summary disagrees with its workflow status, with the reason for
+        each. Read-only.
+      inputs:
+        projectKey:
+          title: Jira Project Key
+          type: string
+          required: true
+          description: The key of the Jira project to scan, e.g. "PROJ".
+  function:
+    - key: resolver
+      handler: index.handler
+    - key: checkConsistencyAction
+      handler: rovo.checkIssueConsistency
+    - key: fixConsistencyAction
+      handler: rovo.fixIssueConsistency
+    - key: scanProjectAction
+      handler: rovo.scanProjectDrift
+resources:
+  - key: main
+    path: src/frontend/index.jsx
+  - key: projectPage
+    path: src/frontend/project.jsx
+app:
+  runtime:
+    name: nodejs24.x
+    memoryMB: 256
+    architecture: arm64
+permissions:
+  scopes:
+    # Jira issue reads/writes for the panel, the project page and the
+    # actions (fetch, transition, summary edit, search, issue links).
+    - read:jira-work
+    - write:jira-work
+    # JSM reads/writes for the "create linked follow-up" fix.
+    - read:servicedesk-request
+    - write:servicedesk-request
