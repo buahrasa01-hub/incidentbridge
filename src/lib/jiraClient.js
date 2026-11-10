@@ -54,13 +54,26 @@ async function request(method, path, body) {
     return unwrap(fake, path);
   }
   // Live transport — lazy import so plain-Node tests never load Forge.
-  const { default: api, route } = await import('@forge/api');
+  const apiModule = await import('@forge/api');
+  // Interop guard (same bundler-wrapping concern as the resolver):
+  // use whichever module level actually exposes asUser().
+  const api = [apiModule, apiModule.default, apiModule.default?.default]
+    .find((candidate) => candidate && typeof candidate.asUser === 'function');
   const options = { method, headers: { Accept: 'application/json' } };
   if (body !== undefined) {
     options.headers['Content-Type'] = 'application/json';
     options.body = JSON.stringify(body);
   }
-  const response = await api.asUser().requestJira(route`${path}`, options);
+  // The path is built entirely by this client (dynamic segments are
+  // already encodeURIComponent'd), so it must go through
+  // assumeTrustedRoute(): feeding a whole built path into the route``
+  // tag as a single interpolated value is rejected by @forge/api with
+  // "Disallowing path manipulation attempt" — that rejection is what
+  // silently forced the panel's demo-fixture fallback on live sites.
+  const trustedRoute = typeof apiModule.assumeTrustedRoute === 'function'
+    ? apiModule.assumeTrustedRoute(path)
+    : apiModule.route([path]);
+  const response = await api.asUser().requestJira(trustedRoute, options);
   let json = null;
   try {
     json = await response.json();

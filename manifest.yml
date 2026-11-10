@@ -108,11 +108,10 @@ modules:
       function: fixConsistencyAction
       actionVerb: UPDATE
       description: >-
-        Applies one fix that the consistency check currently offers for
-        an issue: transition it to the status category its summary
-        claims, rewrite its summary so the wording matches the status,
-        or create a linked Jira Service Management follow-up request.
-        Fails safely when the requested fix is not currently offered.
+        Applies one fix the consistency check currently offers for an
+        issue: transition it to the status its summary claims, rewrite
+        its summary to match the status, or create a linked Jira Service
+        Management follow-up request. Fails safely if not offered.
       inputs:
         issueKey:
           title: Jira Issue Key
@@ -162,6 +161,7 @@ resources:
   - key: projectPage
     path: src/frontend/project.jsx
 app:
+  id: ari:cloud:ecosystem::app/7724ff48-1dfd-42b7-a242-42499f84751e
   runtime:
     name: nodejs24.x
     memoryMB: 256

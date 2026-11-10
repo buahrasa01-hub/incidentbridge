@@ -1,4 +1,13 @@
-import Resolver from '@forge/resolver';
+import * as resolverModule from '@forge/resolver';
+
+// Interop guard: @forge/resolver is a CommonJS package whose class lives
+// on exports.default. Depending on how the Forge bundler wraps the module,
+// the import binding can be the class itself, the exports object, or a
+// namespace wrapping it — pick whichever level is the constructor.
+// (Without this, the deployed bundle failed at load with
+// "out_namespaceObject is not a constructor".)
+const ResolverClass = [resolverModule, resolverModule?.default, resolverModule?.default?.default]
+  .find((candidate) => typeof candidate === 'function');
 import { checkConsistency } from '../lib/consistency.js';
 import * as jira from '../lib/jiraClient.js';
 import { applyFix, scanProject } from '../lib/fixes.js';
@@ -32,7 +41,7 @@ const SAMPLE_ISSUE = {
   projectKey: 'DEMO',
 };
 
-const resolver = new Resolver();
+const resolver = new ResolverClass();
 
 // FORGE_ACTION_ANALYZE — the panel asks: "does this issue's summary
 // agree with its status?" Answers with the normalised issue, the full
