@@ -87,6 +87,9 @@ between summary and status:
 | Project page | `jira:projectPage` (UI Kit) | Whole-project drift table (DynamicTable) |
 | Agent | `rovo:agent` | IncidentBridge agent with three jobs: check, scan, fix |
 | Agent tools | `action` × 3 | check-issue-consistency (GET), fix-issue-consistency (UPDATE), scan-project-drift (GET) |
+| MCP server | `rovo:mcp` | The same three actions as MCP tools (IncidentBridge MCP) |
+| Skill | `rovo:skill` | Open-source skill `incidentbridge-consistency-checker` (SKILL.md) |
+| Graph evidence | Teamwork Graph API | Linked PRs, deployments, goals for the issue (read-only) |
 | Backend | `function` (resolvers + action handlers) | Shared engine, fix executor, REST client |
 
 All product calls go through one client (`src/lib/jiraClient.js`) using
@@ -94,7 +97,10 @@ All product calls go through one client (`src/lib/jiraClient.js`) using
 every read and write; the app never acts with broader rights than the
 person using it. The engine (`src/lib/consistency.js`) is a pure module
 with a 44-case test suite (rules, REST client over a fake transport,
-fix executor) that runs with `npm test` — no site needed.
+fix executor) that runs with `npm test` — no site needed. The MCP tools
+add 8 tests (`test/mcpTools.test.js`) and the graph integration 12 more
+(`test/teamworkGraph.test.js`) plus 1 client test — 65 tests in total,
+all mock-transport, all passing.
 
 ### Why this matters
 
@@ -126,6 +132,39 @@ design is the point: `fix-issue-consistency` re-derives the offered
 fix from the issue's *current* state at invocation time, so an agent
 can never apply a repair the deterministic checker has not just
 approved. Agents propose; the engine disposes.
+
+### Best app with MCP
+
+The same three actions are exposed as MCP tools on a Rovo MCP server
+(one `rovo:mcp` module, `incidentbridge-mcp`): `check-issue-consistency`
+(GET), `fix-issue-consistency` (UPDATE), `scan-project-drift` (GET).
+The handlers in `src/rovo.js` are unchanged — the MCP server is a new
+doorway to the same tools, not a second implementation. A matching
+open-source skill ships with them: one `rovo:skill` module
+(`incidentbridge-consistency-checker`, `skills/incidentbridge-
+consistency-checker/SKILL.md`) declaring the three tools as
+dependencies, registered in the `rovo:agent`, so any Rovo agent runs a
+consistency check the same careful way: check first, report the
+verdict, fix only what the checker offered and only after the user
+confirms. The MCP endpoint is
+`https://mcp.atlassian.com/forge/7724ff48-1dfd-42b7-a242-42499f84751e`
+(external exposure is off by default and is activated by a site admin).
+8 new tests cover the MCP tools (`test/mcpTools.test.js`).
+
+### Best apps with Teamwork Graph
+
+The drift verdict is enriched with independent evidence from the
+Teamwork Graph (`src/lib/teamworkGraph.js`, read-only curated GraphQL
+queries, no write access exists to the graph): external pull requests
+and deployments linked to the issue, plus linked goals as context. A
+`SUCCESSFUL` deployment while the status is not done is hard evidence
+the work already shipped; a linked pull request while the status is
+still new is hedged evidence. The graph never overrules the engine and
+never blocks a verdict — if the graph is unavailable, the verdict
+falls back to the engine alone and says so. Scopes are minimal and
+read-only (`read:graph:issue:jira`, `read:graph:pull-request:external`,
+`read:graph:deployment:external`, `read:graph:goal:atlassian`). 12 new
+tests cover the integration (`test/teamworkGraph.test.js`).
 
 ### Best Marketplace published app
 
@@ -193,4 +232,4 @@ Jira Cloud REST API · Jira Service Management REST API · Node.js 24
 
 - Installation link: https://developer.atlassian.com/console/install/7724ff48-1dfd-42b7-a242-42499f84751e?signature=AYABeO9%2FWrV10uA3EkpQIaB3NukAAAADAAdhd3Mta21zAEthcm46YXdzOmttczp1cy13ZXN0LTI6NzA5NTg3ODM1MjQzOmtleS83MDVlZDY3MC1mNTdjLTQxYjUtOWY5Yi1lM2YyZGNjMTQ2ZTcAuAECAQB4CxqLTo9l4lqXuFjNim1xJM%2Bp%2F3TVP9xHS2BrU5DRRucBbbcpGBnX7QUwfhhlo6spUQAAAH4wfAYJKoZIhvcNAQcGoG8wbQIBADBoBgkqhkiG9w0BBwEwHgYJYIZIAWUDBAEuMBEEDDZb%2FTzAZCjf8v3LJwIBEIA76Fmh3ca%2FGfdlFI7f6IhnPlsCfP2ZJlaGzXotVCXIL%2BwLRgzOBCa1Rm%2FT%2Fg%2FZpPLnaaVbNpwRplgOjSEAB2F3cy1rbXMAS2Fybjphd3M6a21zOmV1LXdlc3QtMTo3MDk1ODc4MzUyNDM6a2V5LzQ2MzBjZTZiLTAwYzMtNGRlMi04NzdiLTYyN2UyMDYwZTVjYwC4AQICAHi9bVMAkme4qVQX1fQHo6ePw3H40A7cGfz7yrmSfBWMXgFG%2FjXSsIMICizpqQe0ShgxAAAAfjB8BgkqhkiG9w0BBwagbzBtAgEAMGgGCSqGSIb3DQEHATAeBglghkgBZQMEAS4wEQQMVMs9gtBdZvQhnLEwAgEQgDsInmqazup%2BLl54h6rF1J%2B7%2BqcYK4AsyJaq3t3fqucQVjsKn9uabCZ0ieM8iSKIU5VgxdHTDyU0gsKr8gAHYXdzLWttcwBLYXJuOmF3czprbXM6dXMtZWFzdC0xOjcwOTU4NzgzNTI0MzprZXkvNmMxMjBiYTAtNGNkNS00OTg1LWI4MmUtNDBhMDQ5NTJjYzU3ALgBAgIAeDYASx0XCjkny4iLV6vz%2BKtEGSGT6kdt0QRpkn6D%2FlVEAdWIXkoJyDOn4zFkYUjseEUAAAB%2BMHwGCSqGSIb3DQEHBqBvMG0CAQAwaAYJKoZIhvcNAQcBMB4GCWCGSAFlAwQBLjARBAytXOBuYBLj%2FDvvQXoCARCAOx%2B%2FuPmkedkbGTEKkrVuhx2FLPJIo64KAxPv3QVINrHu8OKZh98W37%2F8%2BMJtGRrqm6B%2Bk9YdT%2BFUQP5VAgAAAAAMAAAQAAAAAAAAAAAAAAAAAI0Po0vLt7FRMsW7DAwS7RD%2F%2F%2F%2F%2FAAAAAQAAAAAAAAAAAAAAAQAAADJ%2B793i%2BLXsXYKvS%2B2wGtFFtHDOGK6ngkTzLwo%2FogdwJ8rqFP6okrwu5AvHq41xlPvwEUPKxdfLoed4iooIjCXXLTA%3D&product=jira
 - Demo video (YouTube, public): https://youtu.be/cjvjpFLoVts
-- Source repository: [INSERT if published]
+- Source repository: https://github.com/buahrasa01-hub/incidentbridge
