@@ -53,7 +53,10 @@ modules:
         2. Invoke the check-issue-consistency action with that key.
         3. Report the verdict plainly: quote the summary, name the
            status, and if there is drift, explain each finding in one
-           sentence and name the fix the checker offers.
+           sentence and name the fix the checker offers. If the result
+           includes Teamwork Graph evidence, mention the linked pull
+           requests, successful deployments or goals it names — they
+           are independent evidence from outside Jira.
 
         ---
         Job 2: Scan a project
@@ -86,6 +89,37 @@ modules:
         - check-issue-consistency
         - fix-issue-consistency
         - scan-project-drift
+      skills:
+        - incidentbridge-consistency-checker
+  # BONUS — Best app with MCP (Codegeist 2026): the same three actions,
+  # exposed as tools on a Rovo MCP server. Any MCP-compatible client
+  # (Rovo Studio custom agents, or third-party clients via
+  # https://mcp.atlassian.com/forge/<appId>) can invoke them; the
+  # handlers in src/rovo.js are unchanged — the MCP server is a new
+  # doorway to the same tools, not a second implementation. One
+  # rovo:mcp module per app is the platform maximum.
+  rovo:mcp:
+    - key: incidentbridge-mcp
+      name: IncidentBridge MCP
+      tools:
+        - check-issue-consistency
+        - fix-issue-consistency
+        - scan-project-drift
+  # BONUS — open-source skill (rovo:skill): the same three tools,
+  # packaged with reusable instructions (skills/
+  # incidentbridge-consistency-checker/SKILL.md) so any Rovo agent can
+  # run a consistency check the same careful way: check first, report
+  # the verdict, fix only what the checker offered and only after the
+  # user confirms. No new scopes: the skill reuses the actions' own.
+  rovo:skill:
+    - key: incidentbridge-consistency-checker
+      source:
+        dir: skills/incidentbridge-consistency-checker
+      dependencies:
+        tools:
+          - check-issue-consistency
+          - fix-issue-consistency
+          - scan-project-drift
   # The agent's tools. These are standard Forge `action` modules, so
   # other agents (including customer-built ones) can invoke them too.
   action:
@@ -175,3 +209,13 @@ permissions:
     # JSM reads/writes for the "create linked follow-up" fix.
     - read:servicedesk-request
     - write:servicedesk-request
+    # Teamwork Graph (read-only, Preview): the drift verdict is
+    # enriched with graph evidence — pull requests, deployments and
+    # goals linked to the issue (see src/lib/teamworkGraph.js). One
+    # scope per object type the curated queries touch, including the
+    # Jira work item the query starts from. All Teamwork Graph scopes
+    # are read-only; there is no write scope for the graph.
+    - read:graph:issue:jira
+    - read:graph:pull-request:external
+    - read:graph:deployment:external
+    - read:graph:goal:atlassian

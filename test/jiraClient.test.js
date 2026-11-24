@@ -57,6 +57,19 @@ test('getIssue normalises the REST payload for the engine', async () => {
   assert.equal(calls[0].method, 'GET');
 });
 
+test('getIssue carries the numeric id the graph ARI is built from', async () => {
+  const { transport } = fakeTransport({
+    'GET /rest/api/3/issue/PROJ-7': {
+      status: 200,
+      json: { ...RAW_ISSUE, id: '10001' },
+    },
+  });
+  jira.setTransportForTests(transport);
+  const issue = await jira.getIssue('PROJ-7');
+  assert.equal(issue.id, '10001');
+  assert.equal(issue.key, 'PROJ-7');
+});
+
 test('adfToText flattens paragraphs and ignores unknown nodes', () => {
   const doc = {
     type: 'doc',

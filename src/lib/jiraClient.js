@@ -18,6 +18,8 @@
 //
 // Normalised issue shape returned by getIssue()/searchIssues():
 //   {
+//     id,                   // numeric REST id as a string (for the
+//                           // Teamwork Graph ARI — see teamworkGraph.js)
 //     key, summary, descriptionText,
 //     statusName,               // e.g. "In Progress"
 //     statusCategory,           // 'new' | 'indeterminate' | 'done'
@@ -127,6 +129,10 @@ export function adfToText(node) {
 function normaliseIssue(raw) {
   const fields = raw.fields || {};
   return {
+    // The numeric REST id (e.g. "10000"). The engine never reads it;
+    // the Teamwork Graph client needs it to build the issue ARI
+    // (`ari:cloud:jira:{cloudId}:issue/{id}`) — see teamworkGraph.js.
+    id: raw.id != null ? String(raw.id) : null,
     key: raw.key,
     summary: fields.summary || '',
     descriptionText: adfToText(fields.description),

@@ -11,6 +11,10 @@ const ResolverClass = [resolverModule, resolverModule?.default, resolverModule?.
 import { checkConsistency } from '../lib/consistency.js';
 import * as jira from '../lib/jiraClient.js';
 import { applyFix, scanProject } from '../lib/fixes.js';
+import {
+  getIssueGraphEvidence,
+  enrichCheckWithGraph,
+} from '../lib/teamworkGraph.js';
 
 // ---------------------------------------------------------------------------
 // IncidentBridge — backend resolvers
@@ -53,11 +57,37 @@ resolver.define('analyzeIssue', async (req) => {
       ? req.context.extension.issue.key
       : null);
   if (!issueKey) {
-    return { source: 'fixture', issue: SAMPLE_ISSUE, ...checkConsistency(SAMPLE_ISSUE) };
+    return {
+      source: 'fixture',
+      issue: SAMPLE_ISSUE,
+      ...checkConsistency(SAMPLE_ISSUE),
+      graph: { available: false, reason: 'fixture' },
+    };
   }
   try {
     const issue = await jira.getIssue(issueKey);
-    return { source: 'live', issue, ...checkConsistency(issue) };
+    const check = checkConsistency(issue);
+    // Teamwork Graph enrichment (read-only): linked pull requests,
+    // deployments and goals may corroborate the drift with evidence
+    // from outside Jira. A graph failure never breaks the verdict —
+    // the engine-only result stands and the graph is labelled
+    // unavailable (same honesty rule as the fixture fallback).
+    let enriched = check;
+    let graph = { available: false, reason: 'graph-unavailable' };
+    try {
+      const evidence = await getIssueGraphEvidence({
+        cloudId: req.context && req.context.cloudId,
+        issueId: issue.id,
+      });
+      enriched = enrichCheckWithGraph(issue, check, evidence);
+      graph = enriched.graph;
+    } catch (graphError) {
+      console.warn(
+        `analyzeIssue: Teamwork Graph enrichment failed for ${issueKey}: ${graphError.message}`,
+      );
+      graph = { available: false, reason: 'graph-error' };
+    }
+    return { source: 'live', issue, ...enriched, graph };
   } catch (error) {
     // No live site yet (or a transient API failure): fall back to the
     // fixture and label it, rather than rendering a broken panel.
@@ -66,6 +96,7 @@ resolver.define('analyzeIssue', async (req) => {
       source: 'fixture',
       issue: { ...SAMPLE_ISSUE, key: issueKey },
       ...checkConsistency(SAMPLE_ISSUE),
+      graph: { available: false, reason: 'fixture' },
     };
   }
 });
