@@ -94,7 +94,7 @@ const App = () => {
     );
   }
 
-  const { issue, consistent, verdict, findings, source } = result;
+  const { issue, consistent, verdict, findings, source, graph } = result;
 
   return (
     <Box padding="space.200">
@@ -165,6 +165,40 @@ const App = () => {
               </Button>
             </Inline>
           </>
+        )}
+        {graph && graph.available ? (
+          <Stack space="space.100">
+            <Heading as="h4">Teamwork Graph evidence</Heading>
+            {(graph.pullRequests || []).map((pr) => (
+              <Text key={pr.id || pr.title}>
+                Pull request: {pr.title || '(untitled pull request)'}
+              </Text>
+            ))}
+            {(graph.deployments || []).map((d) => (
+              <Text key={d.id || d.displayName}>
+                Deployment: {d.displayName || '(unnamed deployment)'}
+                {d.state ? ` — ${d.state}` : ''}
+                {d.environment ? ` (${d.environment})` : ''}
+              </Text>
+            ))}
+            {(graph.goals || []).map((g) => (
+              <Text key={g.id || g.name}>Goal: {g.name || '(unnamed goal)'}</Text>
+            ))}
+            {(graph.pullRequests || []).length === 0 &&
+              (graph.deployments || []).length === 0 &&
+              (graph.goals || []).length === 0 && (
+                <Text>No linked pull requests, deployments, or goals found.</Text>
+              )}
+          </Stack>
+        ) : (
+          graph && (
+            <SectionMessage title="Teamwork Graph unavailable" appearance="information">
+              <Text>
+                Teamwork Graph unavailable — verdict from the Jira check alone.
+                {graph.reason ? ` (${graph.reason})` : ''}
+              </Text>
+            </SectionMessage>
+          )
         )}
       </Stack>
     </Box>

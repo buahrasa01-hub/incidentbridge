@@ -81,6 +81,15 @@ resolver.define('analyzeIssue', async (req) => {
       });
       enriched = enrichCheckWithGraph(issue, check, evidence);
       graph = enriched.graph;
+      // One success line so `forge logs` can confirm the graph call
+      // ran (and how much evidence it returned) without digging
+      // into the payload.
+      console.log(
+        `analyzeIssue: Teamwork Graph evidence for ${issueKey} ` +
+          `(available: ${evidence.available}): ${graph.pullRequests.length} pull ` +
+          `request(s), ${graph.deployments.length} deployment(s), ` +
+          `${graph.goals.length} goal(s).`,
+      );
     } catch (graphError) {
       console.warn(
         `analyzeIssue: Teamwork Graph enrichment failed for ${issueKey}: ${graphError.message}`,
